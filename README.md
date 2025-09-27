@@ -330,9 +330,8 @@ The backend is complete and ready for frontend integration. Planned frontend fea
 ## 🧪 Testing
 
 ### Run Tests
-```bash
-mvn test
-```
+## Testing
+[To test use these curl commands](curl_tests.md)
 
 ### Manual Testing
 The application includes comprehensive curl-based testing. See the test results showing 95% success rate with all major features working correctly.
@@ -364,6 +363,8 @@ export SPRING_DATASOURCE_URL=jdbc:mysql://localhost:3306/chat_app
 export SPRING_DATASOURCE_USERNAME=chat_user
 export SPRING_DATASOURCE_PASSWORD=your_password
 ```
+
+
 
 ## 📈 Performance Considerations
 
