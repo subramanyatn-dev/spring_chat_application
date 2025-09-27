@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WebSocket Debug</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .log { background: #f0f0f0; padding: 10px; margin: 10px 0; border-radius: 5px; }
+        .error { background: #ffebee; color: #c62828; }
+        .success { background: #e8f5e8; color: #2e7d32; }
+        .info { background: #e3f2fd; color: #1565c0; }
+        button { padding: 10px 20px; margin: 5px; cursor: pointer; }
+        input { padding: 8px; margin: 5px; width: 200px; }
+    </style>
+</head>
+<body>
+    <h1>WebSocket Debug Tool</h1>
+    
+    <div>
+        <label>Select User:</label>
+        <select id="userSelect">
+            <option value="">Select User</option>
+            <option value="user1">User 1</option>
+            <option value="user2">User 2</option>
+        </select>
+        <button onclick="connect()">Connect</button>
+        <button onclick="disconnect()">Disconnect</button>
+    </div>
+    
+    <div>
+        <input type="text" id="messageInput" placeholder="Type message..." />
+        <button onclick="sendTestMessage()">Send Message</button>
+    </div>
+    
+    <div id="logs"></div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sockjs-client/1.5.0/sockjs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>
+    <script>
+        let stompClient = null;
+        let userId = null;
+
+        function log(message, type = 'info') {
+            const logsDiv = document.getElementById('logs');
+            const logDiv = document.createElement('div');
+            logDiv.className = 'log ' + type;
+            logDiv.innerHTML = `[${new Date().toLocaleTimeString()}] ${message}`;
+            logsDiv.appendChild(logDiv);
+            logsDiv.scrollTop = logsDiv.scrollHeight;
+            console.log(message);
+        }
+
+        function handleIncomingMessage(message, source) {
+            log(`📨 Message from ${source}:`, 'success');
+            log(`Raw message: ${JSON.stringify(message)}`, 'info');
+            log(`Message body: ${message.body}`, 'info');
+            
+            try {
+                const messageData = JSON.parse(message.body);
+                log(`📨 Parsed: ${JSON.stringify(messageData)}`, 'success');
+                
+                if (messageData.type === 'CHAT') {
+                    log(`💬 CHAT MESSAGE: "${messageData.content}" from ${messageData.senderId}`, 'success');
+                } else {
+                    log(`📝 ${messageData.type} message from ${messageData.senderId}`, 'info');
+                }
+            } catch (e) {
+                log(`❌ Parse error: ${e.message}`, 'error');
+            }
+        }
+
+        function connect() {
+            userId = document.getElementById('userSelect').value;
+            if (!userId) {
+                log('Please select a user first!', 'error');
+                return;
+            }
+
+            if (stompClient) {
+                stompClient.disconnect();
+            }
+
+            log(`🔄 Connecting as ${userId}...`, 'info');
+            
+            const socket = new SockJS('/ws');
+            stompClient = Stomp.over(socket);
+            
+            // Enable debug
+            stompClient.debug = function(str) {
+                log(`STOMP DEBUG: ${str}`, 'info');
+            };
+
+            stompClient.connect({}, 
+                function(frame) {
+                    log(`✅ Connected successfully!`, 'success');
+                    log(`Frame: ${frame}`, 'info');
+                    
+                    // Subscribe to both user destinations and topic destinations
+                    const userDestination = `/user/${userId}/queue/private`;
+                    const topicDestination = `/topic/user/${userId}`;
+                    
+                    log(`🔔 Subscribing to user destination: ${userDestination}`, 'info');
+                    const userSub = stompClient.subscribe(userDestination, function(message) {
+                        log(`🎉 USER DESTINATION MESSAGE RECEIVED!`, 'success');
+                        handleIncomingMessage(message, 'USER-DEST');
+                    });
+                    log(`📡 User subscription ID: ${userSub.id}`, 'info');
+                    
+                    log(`🔔 Subscribing to topic destination: ${topicDestination}`, 'info');
+                    const topicSub = stompClient.subscribe(topicDestination, function(message) {
+                        log(`🎉 TOPIC DESTINATION MESSAGE RECEIVED!`, 'success');
+                        handleIncomingMessage(message, 'TOPIC');
+                    });
+                    log(`📡 Topic subscription ID: ${topicSub.id}`, 'info');
+                }, 
+                function(error) {
+                    log(`❌ Connection failed: ${error}`, 'error');
+                }
+            );
+        }
+
+        function disconnect() {
+            if (stompClient) {
+                stompClient.disconnect();
+                stompClient = null;
+                log('🔌 Disconnected', 'info');
+            }
+        }
+
+        function sendTestMessage() {
+            const messageInput = document.getElementById('messageInput');
+            const content = messageInput.value.trim();
+            
+            if (!content) {
+                log('Please enter a message!', 'error');
+                return;
+            }
+            
+            if (!stompClient || !userId) {
+                log('Not connected! Please connect first.', 'error');
+                return;
+            }
+
+            const receiverId = userId === 'user1' ? 'user2' : 'user1';
+            const chatMessage = {
+                type: 'CHAT',
+                senderId: userId,
+                receiverId: receiverId,
+                content: content,
+                timestamp: new Date()
+            };
+
+            log(`📤 Sending message to ${receiverId}: "${content}"`, 'info');
+            
+            try {
+                stompClient.send("/app/chat.private", {}, JSON.stringify(chatMessage));
+                messageInput.value = '';
+                log(`✅ Message sent successfully!`, 'success');
+            } catch (error) {
+                log(`❌ Send error: ${error.message}`, 'error');
+            }
+        }
+
+        // Handle Enter key
+        document.getElementById('messageInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                sendTestMessage();
+            }
+        });
+    </script>
+</body>
+</html>

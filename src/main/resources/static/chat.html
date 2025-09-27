@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Chat Application</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            height: 100vh;
+            background-color: #f0f2f5;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 20px auto;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .chat-header {
+            padding: 20px;
+            background: #128C7E;
+            color: white;
+            border-radius: 10px 10px 0 0;
+            position: relative;
+        }
+
+        .status-indicator {
+            position: absolute;
+            right: 20px;
+            top: 50%;
+            transform: translateY(-50%);
+            display: flex;
+            align-items: center;
+            font-size: 14px;
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 5px;
+        }
+
+        .status-dot.connected {
+            background-color: #4CAF50;
+        }
+
+        .status-dot.disconnected {
+            background-color: #f44336;
+        }
+
+        .messages {
+            height: 400px;
+            overflow-y: auto;
+            padding: 20px;
+            background: #E8ECF0;
+        }
+
+        .message {
+            margin: 10px 0;
+            padding: 10px 15px;
+            border-radius: 15px;
+            max-width: 70%;
+            word-wrap: break-word;
+        }
+
+        .sent {
+            background-color: #DCF8C6;
+            margin-left: auto;
+            border-bottom-right-radius: 5px;
+        }
+
+        .received {
+            background-color: white;
+            margin-right: auto;
+            border-bottom-left-radius: 5px;
+        }
+
+        .message-time {
+            font-size: 0.7em;
+            color: #666;
+            margin-top: 5px;
+            text-align: right;
+        }
+
+        .chat-input {
+            padding: 20px;
+            background: white;
+            border-top: 1px solid #eee;
+            border-radius: 0 0 10px 10px;
+            display: flex;
+            gap: 10px;
+        }
+
+        .chat-input input {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 20px;
+            outline: none;
+        }
+
+        .chat-input button {
+            padding: 10px 20px;
+            background: #128C7E;
+            color: white;
+            border: none;
+            border-radius: 20px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+
+        .chat-input button:hover {
+            background: #0d7265;
+        }
+
+        .typing-indicator {
+            padding: 10px;
+            color: #666;
+            font-style: italic;
+            font-size: 0.9em;
+        }
+
+        .user-selector {
+            margin-bottom: 10px;
+            padding: 20px;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+
+        .user-selector select {
+            padding: 8px;
+            margin-right: 10px;
+            border-radius: 5px;
+            border: 1px solid #ddd;
+        }
+
+        .error-message {
+            background: #ffebee;
+            color: #c62828;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="user-selector">
+            <select id="userSelect" onchange="selectUser()">
+                <option value="">Select User</option>
+                <option value="user1">User 1</option>
+                <option value="user2">User 2</option>
+            </select>
+        </div>
+        <div class="error-message" id="errorMessage"></div>
+        <div class="chat-header">
+            <h2>Chat Room</h2>
+            <div class="status-indicator">
+                <div id="statusDot" class="status-dot disconnected"></div>
+                <span id="statusText">Disconnected</span>
+            </div>
+        </div>
+        <div class="messages" id="messages"></div>
+        <div class="typing-indicator" id="typingIndicator" style="display: none;">
+            Someone is typing...
+        </div>
+        <div class="chat-input">
+            <input type="text" id="messageInput" placeholder="Type your message..." disabled>
+            <button onclick="sendMessage()" id="sendButton" disabled>Send</button>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sockjs-client/1.5.0/sockjs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>
+    <script>
+        let stompClient = null;
+        let userId = null;
+        let typingTimeout = null;
+
+        function selectUser() {
+            userId = document.getElementById('userSelect').value;
+            if (userId) {
+                connect();
+                loadChatHistory();
+                document.getElementById('messageInput').disabled = false;
+                document.getElementById('sendButton').disabled = false;
+            }
+        }
+
+        async function loadChatHistory() {
+            if (!userId) return;
+            
+            const otherUser = getReceiverId();
+            console.log(`📜 Loading chat history between ${userId} and ${otherUser}`);
+            
+            try {
+                const response = await fetch(`/api/messages/history?user1=${userId}&user2=${otherUser}`);
+                if (response.ok) {
+                    const messages = await response.json();
+                    console.log('📜 Loaded messages:', messages);
+                    
+                    // Clear existing messages
+                    const messageArea = document.getElementById('messages');
+                    messageArea.innerHTML = '';
+                    
+                    // Display each message
+                    messages.forEach(message => {
+                        const isFromMe = message.sender.username === userId;
+                        showMessage({
+                            content: message.content,
+                            senderId: message.sender.username,
+                            timestamp: message.createdAt
+                        }, isFromMe);
+                    });
+                    
+                    console.log(`✅ Loaded ${messages.length} messages from history`);
+                } else {
+                    console.error('❌ Failed to load chat history:', response.status);
+                }
+            } catch (error) {
+                console.error('❌ Error loading chat history:', error);
+            }
+        }
+
+        function connect() {
+            if (stompClient) {
+                stompClient.disconnect();
+            }
+
+            const socket = new SockJS('/ws');
+            stompClient = Stomp.over(socket);
+            // Enable debug logs to see what's happening
+            stompClient.debug = function(str) {
+                console.log('STOMP: ' + str);
+            };
+
+            stompClient.connect({}, function(frame) {
+                console.log('Connected: ' + frame);
+                updateStatus(true);
+                
+                // Subscribe to personal messages using topic destinations (which work!)
+                const subscriptionPath = '/topic/user/' + userId;
+                console.log('🔔 Subscribing to: ' + subscriptionPath);
+                
+                const subscription = stompClient.subscribe(subscriptionPath, function(message) {
+                    console.log('🎉 MESSAGE RECEIVED!');
+                    console.log('Raw message:', message);
+                    console.log('Message body:', message.body);
+                    
+                    try {
+                        const messageData = JSON.parse(message.body);
+                        console.log('📨 Parsed message data:', messageData);
+                        console.log('Content:', messageData.content);
+                        console.log('Sender:', messageData.senderId);
+                        console.log('Receiver:', messageData.receiverId);
+                        console.log('Is from me?', messageData.senderId === userId);
+                        
+                        // Only show chat messages, not typing indicators
+                        if (messageData.type === 'CHAT') {
+                            showMessage(messageData, messageData.senderId === userId);
+                        } else if (messageData.type === 'TYPING') {
+                            console.log('👥 Typing indicator received');
+                        }
+                    } catch (e) {
+                        console.error('❌ Error parsing message:', e);
+                        console.error('Raw message body:', message.body);
+                    }
+                });
+                
+                console.log('📡 Subscription created:', subscription);
+
+                // Subscribe to typing notifications
+                stompClient.subscribe('/user/' + userId + '/queue/typing', function(notification) {
+                    showTypingIndicator(JSON.parse(notification.body).senderId);
+                });
+
+            }, function(error) {
+                console.error('STOMP error:', error);
+                updateStatus(false);
+                showError('Connection error. Please try again.');
+            });
+        }
+
+        function sendMessage() {
+            const messageInput = document.getElementById('messageInput');
+            const content = messageInput.value.trim();
+            
+            if (content && stompClient) {
+                const chatMessage = {
+                    type: 'CHAT',
+                    senderId: userId,
+                    receiverId: getReceiverId(),
+                    content: content,
+                    timestamp: new Date()
+                };
+
+                try {
+                    console.log('📤 Sending message:', chatMessage);
+                    stompClient.send("/app/chat.private", {}, JSON.stringify(chatMessage));
+                    messageInput.value = '';
+                    console.log('✅ Message sent successfully');
+                    // Don't show the message here immediately, wait for server confirmation
+                } catch (error) {
+                    console.error('❌ Send error:', error);
+                    showError('Failed to send message. Please try again.');
+                }
+            }
+        }
+
+        function showMessage(message, sent) {
+            const messageArea = document.getElementById('messages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message ' + (sent ? 'sent' : 'received');
+            
+            const content = message.content;
+            const sender = sent ? 'You' : message.senderId;
+            const time = new Date(message.timestamp).toLocaleTimeString();
+            
+            messageDiv.innerHTML = `
+                <div>${sender}: ${content}</div>
+                <div class="message-time">${time}</div>
+            `;
+            
+            messageArea.appendChild(messageDiv);
+            messageArea.scrollTop = messageArea.scrollHeight;
+        }
+
+        function handleTyping() {
+            if (!typingTimeout && stompClient) {
+                const typingMessage = {
+                    type: 'TYPING',
+                    senderId: userId,
+                    receiverId: getReceiverId()
+                };
+                stompClient.send("/app/chat.private", {}, JSON.stringify(typingMessage));
+            }
+
+            clearTimeout(typingTimeout);
+            typingTimeout = setTimeout(() => {
+                typingTimeout = null;
+            }, 1000);
+        }
+
+        function showTypingIndicator(typingUserId) {
+            const typingDiv = document.getElementById('typingIndicator');
+            typingDiv.textContent = `${typingUserId} is typing...`;
+            typingDiv.style.display = 'block';
+            
+            setTimeout(() => {
+                typingDiv.style.display = 'none';
+            }, 1000);
+        }
+
+        function updateStatus(connected) {
+            const statusDot = document.getElementById('statusDot');
+            const statusText = document.getElementById('statusText');
+            
+            statusDot.className = 'status-dot ' + (connected ? 'connected' : 'disconnected');
+            statusText.textContent = connected ? 'Connected' : 'Disconnected';
+        }
+
+        function showError(message) {
+            const errorDiv = document.getElementById('errorMessage');
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+            setTimeout(() => {
+                errorDiv.style.display = 'none';
+            }, 5000);
+        }
+
+        function getReceiverId() {
+            return userId === 'user1' ? 'user2' : 'user1';
+        }
+
+        // Handle Enter key
+        document.getElementById('messageInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+
+        // Handle typing indicator
+        document.getElementById('messageInput').addEventListener('input', handleTyping);
+
+        // Handle page unload
+        window.onbeforeunload = function() {
+            if (stompClient) {
+                stompClient.disconnect();
+            }
+        };
+    </script>
+</body>
+</html>

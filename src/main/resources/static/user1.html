@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>User 1 - Chat</title>
+    <style>
+        #messages {
+            height: 300px;
+            overflow-y: auto;
+            border: 1px solid #ccc;
+            margin-bottom: 10px;
+            padding: 10px;
+        }
+        .message {
+            margin: 5px 0;
+            padding: 5px;
+            border-radius: 5px;
+        }
+        .sent {
+            background-color: #e3f2fd;
+            margin-left: 20%;
+            margin-right: 5px;
+        }
+        .received {
+            background-color: #f5f5f5;
+            margin-right: 20%;
+            margin-left: 5px;
+        }
+    </style>
+</head>
+<body>
+    <h2>User 1's Chat Window</h2>
+    <div id="messages"></div>
+    <input type="text" id="message" placeholder="Type your message...">
+    <button onclick="sendMessage()">Send</button>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sockjs-client/1.5.0/sockjs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>
+    <script>
+        var stompClient = null;
+        var userId = "user1";
+
+        function connect() {
+            var socket = new SockJS('/ws');
+            stompClient = Stomp.over(socket);
+            stompClient.connect({}, function(frame) {
+                console.log('Connected: ' + frame);
+                
+                // Subscribe to personal messages
+                stompClient.subscribe('/user/' + userId + '/queue/messages', function(message) {
+                    console.log('Received message:', message.body);
+                    var messageData = JSON.parse(message.body);
+                    showMessage(messageData, messageData.senderId === userId);
+                });
+            });
+        }
+
+        function sendMessage() {
+            var messageContent = document.getElementById('message').value;
+            if (messageContent && stompClient) {
+                var chatMessage = {
+                    type: "CHAT",
+                    senderId: userId,
+                    receiverId: "user2",  // Send to user2
+                    content: messageContent,
+                    timestamp: new Date()
+                };
+                stompClient.send("/app/chat.private", {}, JSON.stringify(chatMessage));
+                showMessage(chatMessage, true);
+                document.getElementById('message').value = '';
+            }
+        }
+
+        function showMessage(message, sent) {
+            console.log('Showing message:', message, 'sent:', sent);
+            var messageArea = document.getElementById('messages');
+            var messageDiv = document.createElement('div');
+            messageDiv.className = 'message ' + (sent ? 'sent' : 'received');
+            
+            var content = message.content || message;
+            var sender = sent ? 'You' : (message.senderId || 'Other');
+            
+            messageDiv.textContent = sender + ': ' + content;
+            messageArea.appendChild(messageDiv);
+            messageArea.scrollTop = messageArea.scrollHeight;
+        }
+
+        // Connect when page loads
+        connect();
+
+        // Handle Enter key
+        document.getElementById('message').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+    </script>
+</body>
+</html>
