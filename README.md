@@ -53,7 +53,7 @@ USE chat_app;
 
 ### 3. Run Database Schema
 The application uses the following database schema:
-
+![db schema](db_design.png)
 ```sql
 -- Users table
 CREATE TABLE users (
