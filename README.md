@@ -20,7 +20,6 @@ A real-time chat application built with Spring Boot, WebSocket (STOMP), MySQL, a
 - **ORM**: JPA/Hibernate
 - **WebSocket**: Spring WebSocket with STOMP
 - **Build Tool**: Maven
-- **Testing**: JUnit, Mockito
 
 ## 📋 Prerequisites
 
